@@ -1,7 +1,8 @@
-// Solara City 3D v3 — boot + main loop: renderer, day/night cycle + rain weather,
-// quality settings, title/pause/map/end screens, input routing, wanted decay,
-// bust + game-over, and ?scene= staging (title / chase / onfoot / mission / night).
-// Fresh rewrite for v3. Static offline files only; no network, no build step.
+// Solara City 3D v3.2 — boot + main loop: renderer, day/night cycle + rain weather,
+// sun + moon + clouds, quality settings, title/pause/map/end screens, input
+// routing, wanted decay, bust + game-over, and ?scene= staging
+// (title / chase / onfoot / mission / night).
+// Fresh rewrite for v3.2. Static offline files only; no network, no build step.
 import * as THREE from 'three';
 import { G, clamp, lerp, fmtMoney } from './state.js';
 import { buildCity } from './city.js';
@@ -52,6 +53,92 @@ G.scene.add(hemi);
 const amb = new THREE.AmbientLight(0xffffff, 0.28);
 G.scene.add(amb);
 
+// ---------------- sky: sun disc + glow, moon, drifting clouds ----------------
+const sunDisc = new THREE.Mesh(
+  new THREE.CircleGeometry(20, 32),
+  new THREE.MeshBasicMaterial({ color: 0xffd9a0, fog: false, transparent: true, opacity: 1 })
+);
+G.scene.add(sunDisc);
+const glowCanvas = document.createElement('canvas');
+glowCanvas.width = 256; glowCanvas.height = 256;
+{
+  const gx = glowCanvas.getContext('2d');
+  const grad = gx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.35)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  gx.fillStyle = grad;
+  gx.fillRect(0, 0, 256, 256);
+}
+const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: new THREE.CanvasTexture(glowCanvas), transparent: true,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.55,
+}));
+sunGlow.scale.set(170, 170, 1);
+G.scene.add(sunGlow);
+const moonDisc = new THREE.Mesh(
+  new THREE.CircleGeometry(12, 32),
+  new THREE.MeshBasicMaterial({ color: 0xe8eefc, fog: false, transparent: true, opacity: 0 })
+);
+const MOON_DIR = new THREE.Vector3(-0.45, 0.62, -0.55).normalize();
+moonDisc.position.copy(MOON_DIR).multiplyScalar(760);
+G.scene.add(moonDisc);
+// moon craters (subtle darker dots)
+for (const [mx, my, mr] of [[-3, 2, 2.2], [2.5, -1.5, 1.6], [0.5, 4, 1.2]]) {
+  const crater = new THREE.Mesh(
+    new THREE.CircleGeometry(mr, 12),
+    new THREE.MeshBasicMaterial({ color: 0xc8d2e8, fog: false, transparent: true, opacity: 0 })
+  );
+  crater.position.set(MOON_DIR.x * 760 + mx, MOON_DIR.y * 760 + my, MOON_DIR.z * 760 + 0.1);
+  crater.lookAt(0, 0, 0);
+  moonDisc.userData.craters = moonDisc.userData.craters || [];
+  moonDisc.userData.craters.push(crater);
+  G.scene.add(crater);
+}
+const cloudMats = [];
+const clouds = [];
+for (let i = 0; i < 12; i++) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xfff2e0, transparent: true, opacity: 0.55, fog: false });
+  cloudMats.push(mat);
+  const cg = new THREE.Group();
+  const nPuffs = 3 + Math.floor(Math.random() * 3);
+  for (let k = 0; k < nPuffs; k++) {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), mat);
+    puff.position.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 7);
+    puff.scale.set(12 + Math.random() * 9, 4 + Math.random() * 2, 7 + Math.random() * 3);
+    cg.add(puff);
+  }
+  cg.position.set(-320 + Math.random() * 700, 35 + Math.random() * 35, -350 + Math.random() * 650);
+  G.scene.add(cg);
+  clouds.push(cg);
+}
+const _sunDir = new THREE.Vector3();
+const _cloudWhite = new THREE.Color(0xffffff);
+const _cloudNight = new THREE.Color(0x8a93a8);
+function updateSky(dt, night) {
+  // sun + moon discs track the sun direction / fixed moon direction
+  _sunDir.copy(sun.position).normalize();
+  sunDisc.position.copy(_sunDir).multiplyScalar(760);
+  sunDisc.lookAt(G.camera.position);
+  sunDisc.material.opacity = clamp(1 - night * 1.4, 0, 1);
+  sunDisc.material.color.copy(sun.color);
+  sunGlow.position.copy(_sunDir).multiplyScalar(750);
+  sunGlow.material.opacity = 0.55 * clamp(1 - night * 1.3, 0, 1);
+  sunGlow.material.color.copy(sun.color);
+  moonDisc.material.opacity = clamp(night - 0.25, 0, 0.9);
+  moonDisc.lookAt(G.camera.position);
+  for (const c of (moonDisc.userData.craters || [])) c.material.opacity = clamp(night - 0.25, 0, 0.9);
+  // clouds drift with the wind and dim at night
+  for (const cg of clouds) {
+    cg.position.x += 1.2 * dt;
+    if (cg.position.x > 400) cg.position.x = -350;
+  }
+  for (const m of cloudMats) {
+    m.opacity = 0.75 * (1 - night * 0.7);
+    m.color.copy(_cloudWhite).lerp(_cloudNight, night);
+  }
+}
+
 // ---------------- day / night ----------------
 // keyframes: hour -> sun colour/intensity, hemi, fog, background, night fraction
 const SKY = [
@@ -91,6 +178,7 @@ function applyTimeOfDay() {
   G.scene.fog.near = 90 - rain * 45;
   G.scene.fog.far = 420 - rain * 190;
   if (G.city) G.city.setNight(night);
+  updateSky(0, night);
   return night;
 }
 
@@ -282,7 +370,7 @@ function stageScene(mode) {
     G.heat = 55; G.wanted = 3;
     spawnPolice(3);
     G.autoDrive = true;
-    clearTrafficNear(-26, 78, 25);
+    clearTrafficNear(-26, 78, 35);
     startMission(0);
     G.camSnapped = false;
   } else if (mode === 'onfoot') {
@@ -341,7 +429,8 @@ function animate() {
     G.city.update(dt);
     updateTraffic(dt * 0.5);
     updatePeds(dt * 0.5);
-    applyTimeOfDay();
+    const nightT = applyTimeOfDay();
+    updateSky(dt, nightT);
     updateRain(dt * 0.2);
     renderer.render(G.scene, G.camera);
     input.endFrame();
@@ -354,6 +443,7 @@ function animate() {
     G.time.hour += dt / 90;
     if (G.time.hour >= 24) { G.time.hour -= 24; G.time.day++; }
     const night = applyTimeOfDay();
+    updateSky(dt, night);
     updateRain(dt);
     G.city.update(dt);
     updatePlayer(dt);
