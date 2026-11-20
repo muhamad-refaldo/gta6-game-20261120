@@ -4,18 +4,19 @@
 
 # Solara City
 
-Solara City is an original 2D top-down open-world crime game built for the make.fun "Make GTA 6" bounty. Explore a sun-soaked coastal city on foot and by car: steal cars, weave through traffic and pedestrians, earn a wanted level and outrun the police, fight back, and play through six story missions with a HUD, minimap and save support. The city, characters, story and sounds are all original.
+A 3D open-world crime game built for the [Make GTA 6 bounty](https://make.fun/bounty/gta6-01) on make.fun. Explore a sun-soaked coastal city at golden hour — seven districts, a bridge to Isla Verde, traffic, pedestrians, police chases, a 5-star wanted system, 10 story missions with named contacts, a weapon wheel, street races, taxi fares, a chop shop, store robberies, a garage, three radio stations, collectibles, respect ranks, a crew, and 3 save slots.
+
+Everything is original: the city, the characters, the story and the music are all made for this game. It runs entirely offline in a desktop browser — three.js is vendored under `game/vendor/`, all sound is synthesized with WebAudio.
 
 ## Play
 
-Serve the `game/` folder with a static server, for example:
-
-```bash
+```sh
 node serve.ts
 ```
 
-Then open http://localhost:8080 in a desktop browser and play with keyboard and mouse.
+Then open http://localhost:8080 and play with keyboard + mouse:
 
-## Bounty
-
-Built for the make.fun bounty: https://make.fun/bounty/gta6-01
+- **WASD** move / drive · **Mouse** look · **Shift** sprint · **Space** jump
+- **F** enter / exit car (steal any car) · **E** interact · **Tab** weapon wheel
+- **Right-click** aim · **Left-click** shoot · **M** map & missions · **Esc** pause
+- **Q** change radio station · **C** camera · **R** respray in the garage

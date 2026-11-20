@@ -3,76 +3,91 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solara City — Open World Crime Game</title>
+<title>Solara City — Open-World Crime Game</title>
 <link rel="stylesheet" href="css/style.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
 </head>
 <body>
-<canvas id="game" width="1280" height="720"></canvas>
+<div id="game"></div>
 
-<!-- In-game HUD -->
+<!-- HUD -->
 <div id="hud" class="hidden">
-  <div id="hud-left">
-    <div id="wanted"></div>
-    <div id="healthbar"><div id="healthfill"></div></div>
-    <div id="money">$0</div>
+  <div id="top-right">
+    <div id="money">$500</div>
+    <div id="clock">DAY 1 · 17:36</div>
+    <div id="radio">RADIO: SOLARA FM</div>
   </div>
-  <div id="hud-right">
-    <canvas id="minimap" width="180" height="180"></canvas>
-    <div id="speed">0 km/h</div>
+  <div id="stars"></div>
+  <div id="objective" class="hidden"><div id="obj-title">MISSION</div><div id="obj-text"></div></div>
+  <div id="district"><span id="district-name">Downtown Solara</span><span id="district-rep">REP 62</span></div>
+  <div id="bottom-left">
+    <div class="bar-label">HEALTH</div><div class="bar"><div id="health-fill"></div></div>
+    <div class="bar-label">ARMOUR</div><div class="bar"><div id="armour-fill"></div></div>
   </div>
-  <div id="objective"></div>
-  <div id="dialogue" class="hidden"><div id="dlg-name"></div><div id="dlg-text"></div></div>
-  <div id="toast" class="hidden"></div>
-  <div id="controls-hint">WASD move / drive &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; F punch &nbsp;·&nbsp; Click shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Space handbrake &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M mute</div>
+  <div id="weapons"></div>
+  <canvas id="minimap" width="220" height="220"></canvas>
+  <div id="speed" class="hidden">0 mph</div>
+  <div id="toast"></div>
+  <div id="dialogue" class="hidden"><div id="dlg-name"></div><div id="dlg-text"></div><div id="dlg-hint">E — continue</div></div>
+  <div id="crosshair" class="hidden">+</div>
+  <div id="hint"></div>
 </div>
 
-<!-- Start screen -->
-<div id="startScreen">
-  <div class="panel">
-    <h1>SOLARA<span>CITY</span></h1>
-    <p class="tagline">Sun, sea, and trouble. One city. Your rules.</p>
-    <p class="story">You are <b>Rian "Rex" Marlowe</b>, a driver fresh out of the Solara docks.
-    The city runs on favors, fast cars and faster getaways. Work for <b>Marco</b>,
-    earn cash, stay ahead of the <b>Solara PD</b> — and don't let the <b>Viper crew</b>
-    push you out of your own streets.</p>
-    <div class="btns">
-      <button id="btnNew">NEW GAME</button>
-      <button id="btnContinue" class="hidden">CONTINUE</button>
-    </div>
-    <p class="keys">WASD — move / drive &nbsp;·&nbsp; E — steal &amp; enter car &nbsp;·&nbsp; Mouse + Click — aim &amp; shoot<br>
-    F — punch &nbsp;·&nbsp; R — reload &nbsp;·&nbsp; Space — handbrake &nbsp;·&nbsp; P — pause</p>
-    <p class="foot">An original game. No real city, person or brand appears in it.</p>
+<!-- Weapon wheel -->
+<div id="wheel" class="hidden">
+  <div id="wheel-title">WEAPONS — Tab to close</div>
+  <div id="wheel-items"></div>
+</div>
+
+<!-- Title screen -->
+<div id="title">
+  <div class="title-sun"></div>
+  <h1>SOLARA<br>CITY</h1>
+  <p class="tagline">Seven districts. One king. Your story starts at sunset.</p>
+  <div class="title-btns">
+    <button id="btn-new">NEW GAME</button>
+    <button id="btn-continue">CONTINUE</button>
+    <button id="btn-load">LOAD SLOT</button>
+  </div>
+  <div id="slots" class="hidden"></div>
+  <p class="controls">WASD move · Mouse look · Shift sprint · Space jump · F enter / exit car · E interact · Tab weapons · M map · Esc pause · Q radio · R respray in garage</p>
+</div>
+
+<!-- Pause menu -->
+<div id="pause" class="hidden">
+  <h2>PAUSED</h2>
+  <div class="pause-btns">
+    <button id="btn-resume">RESUME</button>
+    <button id="btn-map">MAP &amp; MISSIONS</button>
+    <button id="btn-save">SAVE GAME</button>
+    <button id="btn-title">QUIT TO TITLE</button>
   </div>
 </div>
 
-<!-- Pause screen -->
-<div id="pauseScreen" class="hidden">
-  <div class="panel"><h2>PAUSED</h2>
-    <div class="btns"><button id="btnResume">RESUME</button>
-    <button id="btnSave">SAVE GAME</button>
-    <button id="btnQuit">QUIT TO TITLE</button></div>
+<!-- Full map / story / stats -->
+<div id="mapmenu" class="hidden">
+  <div class="map-tabs">
+    <button data-tab="map" class="active">MAP</button>
+    <button data-tab="story">STORY</button>
+    <button data-tab="stats">STATS</button>
+    <button id="btn-close-map">✕ CLOSE</button>
   </div>
+  <div id="tab-map" class="tab active">
+    <canvas id="bigmap" width="860" height="620"></canvas>
+    <div id="map-legend">● You &nbsp; ★ Mission &nbsp; ◆ Race &nbsp; $ Chop shop &nbsp; ✚ Garage &nbsp; ◉ Shell &nbsp; ▲ Police</div>
+  </div>
+  <div id="tab-story" class="tab"><div id="mission-list"></div></div>
+  <div id="tab-stats" class="tab"><div id="stats-list"></div></div>
 </div>
 
-<!-- Busted / wasted screen -->
-<div id="endScreen" class="hidden">
-  <div class="panel"><h2 id="endTitle">BUSTED</h2>
-    <p id="endText"></p>
-    <div class="btns"><button id="btnRetry">TRY AGAIN</button>
-    <button id="btnTitle">TITLE SCREEN</button></div>
-  </div>
+<!-- Game over / busted -->
+<div id="end" class="hidden">
+  <h1 id="end-title">WASTED</h1>
+  <p id="end-sub"></p>
+  <div class="title-btns"><button id="btn-retry">RESPAWN — $200</button><button id="btn-end-title">TITLE</button></div>
 </div>
 
-<script src="js/city.js"></script>
-<script src="js/input.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/save.js"></script>
-<script src="js/player.js"></script>
-<script src="js/vehicles.js"></script>
-<script src="js/pedestrians.js"></script>
-<script src="js/missions.js"></script>
-<script src="js/combat.js"></script>
-<script src="js/hud.js"></script>
-<script src="js/main.js"></script>
+<div id="err" class="hidden"></div>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>

@@ -1,30 +1,30 @@
-// main.ts — entrypoint for the Solara City game (make.fun gta6-01).
-// Copies the game and its screenshots into the output directory and writes
-// the dossier the judges read. Node 22 standard library only.
+// Solara City — a 3D open-world crime game for make.fun gta6-01.
+// Node 22, standard library only. The program hands the entry in: it copies
+// game/ and screenshots/ from beside this file to /output and writes
+// /output/dossier.json with the vendored make.fun library. It never deletes
+// the output directory itself (the grader mounts it). Outside the grader,
+// MAKEFUN_OUTPUT_DIR stands in for /output:
+//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-// Directory this file lives in, so paths work wherever the grader runs it.
 const here = fileURLToPath(new URL('.', import.meta.url));
-
-// The grader writes to /output; locally MAKEFUN_OUTPUT_DIR stands in for it.
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+
 mkdirSync(out, { recursive: true });
-
-// Ship the whole game: every file under game/ is plain static content.
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
-
-// Ship the screenshots, when the repo carries any.
 mkdirSync(join(out, 'screenshots'), { recursive: true });
 if (existsSync(join(here, 'screenshots'))) {
   cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 }
 
-// The dossier describes the game for the judge: sources, vendored files,
-// assets, totals, and the screenshots. It must match what buildDossier
-// writes from exactly these files, so the gate can compare byte for byte.
+// The scorer's own caps: only text_max_bytes shapes the dossier bytes; the
+// rest refuse an entry the scorer would refuse (more than 4 screenshots or
+// one over 256 KiB; more than 993 files in game/ or 48 MiB of game files in
+// all, or a path under game/ over 1000 bytes).
 writeFileSync(
   join(out, 'dossier.json'),
   buildDossier(out, {
@@ -32,6 +32,6 @@ writeFileSync(
     screenshots: { max: 4, max_bytes: 262144 },
     game_max_files: 993,
     game_max_bytes: 50331648,
-    game_path_max_bytes: 1000
-  })
+    game_path_max_bytes: 1000,
+  }),
 );
