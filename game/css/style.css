@@ -1,0 +1,62 @@
+/* Solara City — interface styling. Warm sunset palette, chunky arcade type. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #10131a;
+  font-family: "Trebuchet MS", Verdana, sans-serif; color: #fff; }
+#game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block;
+  image-rendering: auto; cursor: crosshair; }
+.hidden { display: none !important; }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#hud-left { position: absolute; top: 14px; left: 16px; }
+#wanted { font-size: 30px; letter-spacing: 4px; color: #ffd23e;
+  text-shadow: 0 0 8px rgba(0,0,0,.8), 0 2px 0 #000; min-height: 36px; }
+#wanted .off { color: rgba(255,255,255,.22); text-shadow: 0 2px 0 #000; }
+#healthbar { width: 220px; height: 16px; margin-top: 6px; background: rgba(0,0,0,.55);
+  border: 2px solid rgba(255,255,255,.75); border-radius: 8px; overflow: hidden; }
+#healthfill { height: 100%; width: 100%; background: linear-gradient(90deg,#ff5a3c,#ffb03a); }
+#money { margin-top: 6px; font-size: 26px; font-weight: bold; color: #7dff8a;
+  text-shadow: 0 2px 0 #000, 0 0 10px rgba(0,0,0,.6); }
+#hud-right { position: absolute; top: 14px; right: 16px; text-align: right; }
+#minimap { border: 3px solid rgba(255,255,255,.8); border-radius: 50%;
+  background: #20242e; box-shadow: 0 0 0 3px rgba(0,0,0,.5); }
+#speed { margin-top: 4px; font-size: 20px; font-weight: bold; text-shadow: 0 2px 0 #000; }
+#objective { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  max-width: 46vw; background: rgba(0,0,0,.55); border-left: 5px solid #ffd23e;
+  padding: 8px 14px; font-size: 16px; border-radius: 4px; text-shadow: 0 1px 0 #000; }
+#dialogue { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
+  width: min(620px, 86vw); background: rgba(10,12,20,.88); border: 2px solid #ffd23e;
+  border-radius: 10px; padding: 12px 16px; }
+#dlg-name { color: #ffd23e; font-weight: bold; font-size: 15px; letter-spacing: 1px; }
+#dlg-text { margin-top: 4px; font-size: 16px; line-height: 1.45; }
+#toast { position: absolute; left: 50%; top: 22%; transform: translateX(-50%);
+  font-size: 26px; font-weight: bold; color: #ffd23e; text-shadow: 0 2px 0 #000, 0 0 18px rgba(0,0,0,.7); }
+#controls-hint { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  font-size: 13px; color: rgba(255,255,255,.75); text-shadow: 0 1px 0 #000;
+  background: rgba(0,0,0,.4); padding: 5px 12px; border-radius: 20px; white-space: nowrap; }
+
+/* ---------- Screens ---------- */
+#startScreen, #pauseScreen, #endScreen { position: fixed; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, rgba(20,8,40,.82), rgba(120,40,10,.78)); }
+.panel { max-width: 640px; width: 92vw; text-align: center; padding: 34px 30px;
+  background: rgba(8,10,18,.72); border: 2px solid rgba(255,210,62,.6);
+  border-radius: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.panel h1 { font-size: 64px; letter-spacing: 3px; color: #fff; line-height: .95;
+  text-shadow: 0 4px 0 #b33, 0 8px 24px rgba(0,0,0,.7); }
+.panel h1 span { color: #ffd23e; }
+.panel h2 { font-size: 44px; letter-spacing: 4px; color: #ffd23e;
+  text-shadow: 0 3px 0 #000; }
+.tagline { margin-top: 8px; font-size: 18px; color: #ffd9a0; font-style: italic; }
+.story { margin: 18px auto 6px; font-size: 16px; line-height: 1.55; color: #e8e8e8; max-width: 520px; }
+.story b { color: #ffd23e; }
+.btns { margin-top: 22px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+button { pointer-events: auto; cursor: pointer; font-family: inherit; font-size: 17px;
+  font-weight: bold; letter-spacing: 1px; color: #1a1200; background: #ffd23e;
+  border: none; border-radius: 10px; padding: 13px 26px;
+  box-shadow: 0 4px 0 #a67c00; transition: transform .06s; }
+button:hover { transform: translateY(-2px); }
+button:active { transform: translateY(2px); box-shadow: 0 2px 0 #a67c00; }
+.keys { margin-top: 20px; font-size: 14px; line-height: 1.7; color: #cfd6e4; }
+.foot { margin-top: 14px; font-size: 12px; color: rgba(255,255,255,.5); }
+#endText { margin-top: 12px; font-size: 17px; line-height: 1.5; color: #e8e8e8; }

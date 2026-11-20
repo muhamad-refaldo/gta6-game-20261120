@@ -1,19 +1,78 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
-<style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-</style>
+<title>Solara City — Open World Crime Game</title>
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
-<script type="module" src="./src/main.js"></script>
+<canvas id="game" width="1280" height="720"></canvas>
+
+<!-- In-game HUD -->
+<div id="hud" class="hidden">
+  <div id="hud-left">
+    <div id="wanted"></div>
+    <div id="healthbar"><div id="healthfill"></div></div>
+    <div id="money">$0</div>
+  </div>
+  <div id="hud-right">
+    <canvas id="minimap" width="180" height="180"></canvas>
+    <div id="speed">0 km/h</div>
+  </div>
+  <div id="objective"></div>
+  <div id="dialogue" class="hidden"><div id="dlg-name"></div><div id="dlg-text"></div></div>
+  <div id="toast" class="hidden"></div>
+  <div id="controls-hint">WASD move / drive &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; F punch &nbsp;·&nbsp; Click shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Space handbrake &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M mute</div>
+</div>
+
+<!-- Start screen -->
+<div id="startScreen">
+  <div class="panel">
+    <h1>SOLARA<span>CITY</span></h1>
+    <p class="tagline">Sun, sea, and trouble. One city. Your rules.</p>
+    <p class="story">You are <b>Rian "Rex" Marlowe</b>, a driver fresh out of the Solara docks.
+    The city runs on favors, fast cars and faster getaways. Work for <b>Marco</b>,
+    earn cash, stay ahead of the <b>Solara PD</b> — and don't let the <b>Viper crew</b>
+    push you out of your own streets.</p>
+    <div class="btns">
+      <button id="btnNew">NEW GAME</button>
+      <button id="btnContinue" class="hidden">CONTINUE</button>
+    </div>
+    <p class="keys">WASD — move / drive &nbsp;·&nbsp; E — steal &amp; enter car &nbsp;·&nbsp; Mouse + Click — aim &amp; shoot<br>
+    F — punch &nbsp;·&nbsp; R — reload &nbsp;·&nbsp; Space — handbrake &nbsp;·&nbsp; P — pause</p>
+    <p class="foot">An original game. No real city, person or brand appears in it.</p>
+  </div>
+</div>
+
+<!-- Pause screen -->
+<div id="pauseScreen" class="hidden">
+  <div class="panel"><h2>PAUSED</h2>
+    <div class="btns"><button id="btnResume">RESUME</button>
+    <button id="btnSave">SAVE GAME</button>
+    <button id="btnQuit">QUIT TO TITLE</button></div>
+  </div>
+</div>
+
+<!-- Busted / wasted screen -->
+<div id="endScreen" class="hidden">
+  <div class="panel"><h2 id="endTitle">BUSTED</h2>
+    <p id="endText"></p>
+    <div class="btns"><button id="btnRetry">TRY AGAIN</button>
+    <button id="btnTitle">TITLE SCREEN</button></div>
+  </div>
+</div>
+
+<script src="js/city.js"></script>
+<script src="js/input.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/save.js"></script>
+<script src="js/player.js"></script>
+<script src="js/vehicles.js"></script>
+<script src="js/pedestrians.js"></script>
+<script src="js/missions.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/main.js"></script>
 </body>
 </html>
