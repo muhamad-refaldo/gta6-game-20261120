@@ -4,90 +4,106 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Solara City — Open-World Crime Game</title>
-<link rel="stylesheet" href="css/style.css">
-<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
+<link rel="stylesheet" href="./css/style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
 <div id="game"></div>
 
-<!-- HUD -->
+<!-- ============ HUD ============ -->
 <div id="hud" class="hidden">
+  <div id="district"><span id="district-name">Downtown Solara</span><span id="district-rep">REP 62</span></div>
+  <div id="stars"></div>
   <div id="top-right">
     <div id="money">$500</div>
     <div id="clock">DAY 1 · 17:36</div>
     <div id="radio">RADIO: SOLARA FM</div>
   </div>
-  <div id="stars"></div>
-  <div id="objective" class="hidden"><div id="obj-title">MISSION</div><div id="obj-text"></div></div>
-  <div id="district"><span id="district-name">Downtown Solara</span><span id="district-rep">REP 62</span></div>
+  <div id="objective" style="display:none">
+    <div id="obj-title">MISSION</div>
+    <div id="obj-text"></div>
+  </div>
   <div id="bottom-left">
-    <div class="bar-label">HEALTH</div><div class="bar"><div id="health-fill"></div></div>
-    <div class="bar-label">ARMOUR</div><div class="bar"><div id="armour-fill"></div></div>
+    <div class="bar-label">HEALTH</div>
+    <div class="bar"><div id="health-fill"></div></div>
+    <div class="bar-label">ARMOUR</div>
+    <div class="bar"><div id="armour-fill"></div></div>
   </div>
   <div id="weapons"></div>
   <canvas id="minimap" width="220" height="220"></canvas>
-  <div id="speed" class="hidden">0 mph</div>
-  <div id="toast"></div>
-  <div id="dialogue" class="hidden"><div id="dlg-name"></div><div id="dlg-text"></div><div id="dlg-hint">E — continue</div></div>
-  <div id="crosshair" class="hidden">+</div>
-  <div id="hint"></div>
+  <div id="speed">0 mph</div>
+  <div id="toast" style="opacity:0"></div>
+  <div id="hint" style="opacity:0"></div>
+  <div id="dialogue" style="display:none">
+    <div id="dlg-name"></div>
+    <div id="dlg-text"></div>
+    <div id="dlg-hint"></div>
+  </div>
+  <div id="crosshair" style="display:none">+</div>
 </div>
 
-<!-- Weapon wheel -->
+<!-- ============ Weapon wheel (Tab) ============ -->
 <div id="wheel" class="hidden">
-  <div id="wheel-title">WEAPONS — Tab to close</div>
+  <div id="wheel-title">WEAPONS</div>
   <div id="wheel-items"></div>
 </div>
 
-<!-- Title screen -->
+<!-- ============ Title screen ============ -->
 <div id="title">
   <div class="title-sun"></div>
   <h1>SOLARA<br>CITY</h1>
-  <p class="tagline">Seven districts. One king. Your story starts at sunset.</p>
+  <div class="tagline">Seven districts. One king. Make it yours.</div>
   <div class="title-btns">
     <button id="btn-new">NEW GAME</button>
     <button id="btn-continue">CONTINUE</button>
-    <button id="btn-load">LOAD SLOT</button>
   </div>
-  <div id="slots" class="hidden"></div>
-  <p class="controls">WASD move · Mouse look · Shift sprint · Space jump · F enter / exit car · E interact · Tab weapons · M map · Esc pause · Q radio · R respray in garage</p>
+  <div id="slots"></div>
+  <div class="controls">WASD move · Mouse look · F enter / exit car · E interact · R respray · Q radio · Tab weapons · M map · C camera · Shift sprint · Space jump / handbrake</div>
 </div>
 
-<!-- Pause menu -->
+<!-- ============ Pause (Esc) ============ -->
 <div id="pause" class="hidden">
   <h2>PAUSED</h2>
   <div class="pause-btns">
     <button id="btn-resume">RESUME</button>
-    <button id="btn-map">MAP &amp; MISSIONS</button>
+    <button id="btn-map">MAP</button>
     <button id="btn-save">SAVE GAME</button>
     <button id="btn-title">QUIT TO TITLE</button>
   </div>
+  <div id="quality" style="margin-top:22px;display:flex;gap:8px;align-items:center">
+    <span style="font-size:13px;letter-spacing:2px;color:#ffe9b0">QUALITY</span>
+    <button data-q="low" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 14px;border-radius:8px">LOW</button>
+    <button data-q="med" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 14px;border-radius:8px">MED</button>
+    <button data-q="high" class="active" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 14px;border-radius:8px">HIGH</button>
+  </div>
 </div>
 
-<!-- Full map / story / stats -->
+<!-- ============ Game over / busted ============ -->
+<div id="end" class="hidden">
+  <h1 id="end-title">WASTED</h1>
+  <div id="end-sub"></div>
+  <div class="pause-btns"><button id="btn-retry">PLAY AGAIN</button></div>
+</div>
+
+<!-- ============ Full map (M) ============ -->
 <div id="mapmenu" class="hidden">
   <div class="map-tabs">
     <button data-tab="map" class="active">MAP</button>
     <button data-tab="story">STORY</button>
     <button data-tab="stats">STATS</button>
-    <button id="btn-close-map">✕ CLOSE</button>
   </div>
   <div id="tab-map" class="tab active">
-    <canvas id="bigmap" width="860" height="620"></canvas>
-    <div id="map-legend">● You &nbsp; ★ Mission &nbsp; ◆ Race &nbsp; $ Chop shop &nbsp; ✚ Garage &nbsp; ◉ Shell &nbsp; ▲ Police</div>
+    <canvas id="bigmap" width="720" height="520"></canvas>
+    <div id="map-legend">◆ race &nbsp;·&nbsp; <span style="color:#7dff9a">●</span> shop &nbsp;·&nbsp; <span style="color:#ff5d5d">●</span> chop shop &nbsp;·&nbsp; <span style="color:#4ecdc4">●</span> garage &nbsp;·&nbsp; <span style="color:#ffd23d">●</span> mission / shell &nbsp;·&nbsp; <span style="color:#ff3d5e">●</span> police</div>
   </div>
   <div id="tab-story" class="tab"><div id="mission-list"></div></div>
   <div id="tab-stats" class="tab"><div id="stats-list"></div></div>
+  <div style="margin-top:14px"><button id="btn-close-map" style="background:#ff9f1c;border:none;color:#fff;font-size:15px;font-weight:800;padding:10px 22px;border-radius:8px">CLOSE MAP</button></div>
 </div>
 
-<!-- Game over / busted -->
-<div id="end" class="hidden">
-  <h1 id="end-title">WASTED</h1>
-  <p id="end-sub"></p>
-  <div class="title-btns"><button id="btn-retry">RESPAWN — $200</button><button id="btn-end-title">TITLE</button></div>
-</div>
-
-<div id="err" class="hidden"></div>
-<script type="module" src="js/main.js"></script>
+<div id="err" style="display:none"></div>
+<script type="module" src="./js/main.js"></script>
 </body>
 </html>
