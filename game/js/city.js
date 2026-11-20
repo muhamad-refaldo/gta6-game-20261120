@@ -29,8 +29,8 @@ export const SAFEHOUSES = [
 // Building footprints for car collision (filled by buildCity).
 export const SOLIDS = [];
 
-// Gun shop (Ammu-Nation): door / interact point, building 11 units north.
-const GUNSHOP = { x: -52, z: 167, bx: -52, bz: 156, name: 'AMMU-NATION' };
+// Gun shop (Solara Arms): door / interact point, building 11 units north.
+const GUNSHOP = { x: -52, z: 167, bx: -52, bz: 156, name: 'SOLARA ARMS' };
 
 // Ground height: the bridge deck sits at y=0.1, everything else at y=0.
 export function groundY(x, z) {
@@ -404,7 +404,7 @@ export function buildCity() {
   bankSign.position.set(52, 9, -43.5);
   scene.add(bankSign);
 
-  // ---------- gun shop (Ammu-Nation) ----------
+  // ---------- gun shop (Solara Arms) ----------
   {
     const b = new THREE.Mesh(new THREE.BoxGeometry(18, 8, 14), facadeMat(4));
     b.position.set(GUNSHOP.bx, 4, GUNSHOP.bz);
@@ -412,7 +412,7 @@ export function buildCity() {
     scene.add(b);
     solid(GUNSHOP.bx, GUNSHOP.bz, 9.5, 7.5);
     box(19, 0.5, 15, M.curb, GUNSHOP.bx, 8.25, GUNSHOP.bz, scene);
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(16, 4), new THREE.MeshBasicMaterial({ map: signTex('AMMU-NATION', '#ffd23d', '#1a1a1a') }));
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(16, 4), new THREE.MeshBasicMaterial({ map: signTex('SOLARA ARMS', '#ffd23d', '#1a1a1a') }));
     sign.position.set(GUNSHOP.bx, 6.5, GUNSHOP.bz + 7.2);
     scene.add(sign);
   }
