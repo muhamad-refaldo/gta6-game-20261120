@@ -1,132 +1,201 @@
-// Solara City 3D — the player: low-poly third-person character, movement, camera, cars.
+// Solara City 3D v3.1 — player: detailed humanoid character, third-person camera,
+// on-foot movement (walk/sprint/jump), enter/exit cars. Fresh rewrite for v3.1.
+// The character is a real low-poly person now: jacket, shirt, arms, legs, shoes,
+// cap and hair, with a walk-cycle swing — not a green box.
 import * as THREE from 'three';
-import { G, clamp, lerp } from './state.js';
+import { G, clamp, lerp, dist2 } from './state.js';
 import { input } from './input.js';
-import { audio } from './audio.js';
+
+function turnToward(cur, target, maxStep) {
+  let d = target - cur;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return cur + clamp(d, -maxStep, maxStep);
+}
+
+function box(w, h, d, color, x = 0, y = 0, z = 0) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color }));
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  return m;
+}
 
 export function createPlayer() {
   const g = new THREE.Group();
-  const skin = new THREE.MeshLambertMaterial({ color: 0xd9a066 });
-  const shirt = new THREE.MeshLambertMaterial({ color: 0x2ec4b6 });
-  const pants = new THREE.MeshLambertMaterial({ color: 0x2b2f38 });
-  const hair = new THREE.MeshLambertMaterial({ color: 0x1a1210 });
-  const mk = (w, h, d, mat, x, y, z) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set(x, y, z); m.castShadow = true; g.add(m); return m;
-  };
-  const torso = mk(0.9, 1.0, 0.5, shirt, 0, 1.35, 0);
-  const head = mk(0.55, 0.55, 0.55, skin, 0, 2.15, 0);
-  mk(0.6, 0.22, 0.6, hair, 0, 2.5, 0);
-  const legL = mk(0.34, 0.9, 0.4, pants, -0.22, 0.45, 0);
-  const legR = mk(0.34, 0.9, 0.4, pants, 0.22, 0.45, 0);
-  const armL = mk(0.28, 0.9, 0.32, shirt, -0.62, 1.35, 0);
-  const armR = mk(0.28, 0.9, 0.32, shirt, 0.62, 1.35, 0);
-  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  const jacket = 0xd8552a;   // burnt-orange jacket — the player's signature colour
+  const jacketDark = 0xa83f1e;
+  const shirt = 0xffe9b0;
+  const pants = 0x23283a;
+  const skin = 0xd9a066;
+  const hair = 0x2a1a12;
+  const cap = 0xc22a2a;
+
+  // ---- legs (pivot at the hip so the walk swing looks right) ----
+  const legL = new THREE.Group();
+  legL.position.set(-0.18, 0.84, 0);
+  const legLMesh = box(0.3, 0.8, 0.34, pants, 0, -0.4, 0);
+  const shoeL = box(0.32, 0.12, 0.46, 0x14161c, 0, -0.78, 0.06);
+  legL.add(legLMesh, shoeL);
+  const legR = new THREE.Group();
+  legR.position.set(0.18, 0.84, 0);
+  const legRMesh = box(0.3, 0.8, 0.34, pants, 0, -0.4, 0);
+  const shoeR = box(0.32, 0.12, 0.46, 0x14161c, 0, -0.78, 0.06);
+  legR.add(legRMesh, shoeR);
+
+  // ---- torso: jacket + shirt panel + belt ----
+  const torso = box(0.86, 0.92, 0.5, jacket, 0, 1.32, 0);
+  const shirtPanel = box(0.46, 0.66, 0.06, shirt, 0, 1.36, 0.26);
+  const belt = box(0.88, 0.1, 0.52, 0x1a1a1a, 0, 0.9, 0);
+  const collar = box(0.5, 0.12, 0.54, jacketDark, 0, 1.82, 0);
+
+  // ---- arms (pivot at the shoulder) ----
+  const armL = new THREE.Group();
+  armL.position.set(-0.56, 1.7, 0);
+  armL.add(box(0.26, 0.78, 0.3, jacketDark, 0, -0.39, 0));
+  armL.add(box(0.24, 0.16, 0.28, skin, 0, -0.82, 0));
+  const armR = new THREE.Group();
+  armR.position.set(0.56, 1.7, 0);
+  armR.add(box(0.26, 0.78, 0.3, jacketDark, 0, -0.39, 0));
+  armR.add(box(0.24, 0.16, 0.28, skin, 0, -0.82, 0));
+
+  // ---- head: skin + hair + backwards cap with brim ----
+  const head = new THREE.Group();
+  head.position.set(0, 2.02, 0);
+  head.add(box(0.5, 0.48, 0.46, skin, 0, 0, 0));
+  head.add(box(0.52, 0.18, 0.48, hair, 0, 0.2, -0.02));
+  const capTop = box(0.54, 0.12, 0.5, cap, 0, 0.28, 0);
+  const capBrim = box(0.5, 0.05, 0.26, cap, 0, 0.24, -0.32); // brim points back
+  const capButton = box(0.1, 0.06, 0.1, 0xffffff, 0, 0.36, 0);
+  head.add(capTop, capBrim, capButton);
+
+  g.add(legL, legR, torso, shirtPanel, belt, collar, armL, armR, head);
+  g.position.set(-26, 0, -26);
   G.scene.add(g);
+
   G.player = {
-    group: g, parts: { legL, legR, armL, armR, torso, head },
-    pos: new THREE.Vector3(0, 0, 30), vel: new THREE.Vector3(),
-    yaw: Math.PI, speed: 0, onFoot: true, car: null, walkPhase: 0, vy: 0, grounded: true,
+    group: g, pos: new THREE.Vector3(-26, 0, -26),
+    yaw: 0, speed: 0, onFoot: true, car: null, walkPhase: 0, vy: 0,
+    parts: { legL, legR, armL, armR, torso, head },
   };
-  return G.player;
+  G.camYaw = 0; G.camPitch = 0.32; G.camDist = 9; G.camMode = 0; G.camSnapped = false;
 }
 
-function nearestCar(maxD) {
-  let best = null, bd = maxD;
+function tryEnterCar() {
+  const p = G.player;
+  let best = null, bd = 4.5;
   for (const c of G.cars) {
-    if (c === G.player.car || c.police) continue;
-    const d = c.group.position.distanceTo(G.player.pos);
+    const d = dist2(p.pos.x, p.pos.z, c.group.position.x, c.group.position.z);
     if (d < bd) { bd = d; best = c; }
   }
-  return best;
+  if (best) enterCar(best);
+}
+
+function exitCar() {
+  const p = G.player;
+  const car = p.car;
+  if (!car) return;
+  // step out on the car's left side
+  const sx = Math.cos(car.yaw) * 2.4, sz = -Math.sin(car.yaw) * 2.4;
+  p.pos.set(car.group.position.x + sx, 0, car.group.position.z + sz);
+  p.yaw = car.yaw;
+  p.car = null; p.onFoot = true; p.speed = 0; p.vy = 0;
+  car.speed = 0;
+  p.group.visible = true;
+  p.group.position.copy(p.pos);
+  p.group.rotation.y = p.yaw;
+  G.camSnapped = false;
 }
 
 export function enterCar(car) {
   const p = G.player;
-  p.car = car; p.onFoot = false; car.driver = 'player';
+  if (!car || !p) return;
+  // the car stops being AI-driven the moment the player takes it
+  const ti = G.traffic.indexOf(car);
+  if (ti >= 0) G.traffic.splice(ti, 1);
+  const pi = G.police.indexOf(car);
+  if (pi >= 0) G.police.splice(pi, 1);
+  if (!car.owned) { car.owned = true; G.stats.carsStolen++; }
+  p.car = car; p.onFoot = false; p.speed = 0; p.vy = 0;
+  car.driver = 'player';
   p.group.visible = false;
-  G.stats.carsStolen++;
-  audio.blip(300, 0.15, 'square', 0.1);
-  return car;
-}
-export function exitCar() {
-  const p = G.player;
-  if (!p.car) return;
-  const c = p.car;
-  c.driver = null;
-  p.pos.copy(c.group.position).add(new THREE.Vector3(Math.sin(c.yaw + Math.PI / 2) * 2.2, 0, Math.cos(c.yaw + Math.PI / 2) * 2.2));
-  p.pos.y = 0; p.yaw = c.yaw;
-  p.car = null; p.onFoot = true;
-  p.group.visible = true;
-  p.group.position.copy(p.pos);
+  p.pos.copy(car.group.position);
+  p.yaw = car.yaw;
+  G.camSnapped = false;
 }
 
 export function updatePlayer(dt) {
   const p = G.player;
   if (!p) return;
-  const ax = input.axis();
-
-  if (p.onFoot) {
-    // camera-relative movement
-    const cy = G.camYaw;
-    const fx = -Math.sin(cy), fz = -Math.cos(cy);
-    const rx = -fz, rz = fx;
-    let mx = fx * ax.f + rx * ax.s, mz = fz * ax.f + rz * ax.s;
-    const ml = Math.hypot(mx, mz);
-    const sprint = input.keys.ShiftLeft || input.keys.ShiftRight;
-    const spd = sprint ? 9 : 5;
-    if (ml > 0.01) {
-      mx /= ml; mz /= ml;
-      p.pos.x += mx * spd * dt; p.pos.z += mz * spd * dt;
-      p.yaw = Math.atan2(mx, mz);
-      p.walkPhase += dt * (sprint ? 13 : 9);
-      p.speed = spd;
-    } else p.speed = 0;
-    // jump
-    if (input.wasPressed('Space') && p.grounded) { p.vy = 7; p.grounded = false; }
-    if (!p.grounded) {
-      p.vy -= 22 * dt; p.pos.y += p.vy * dt;
-      if (p.pos.y <= 0) { p.pos.y = 0; p.vy = 0; p.grounded = true; }
-    }
-    // walk animation
-    const sw = p.speed > 0 ? Math.sin(p.walkPhase) * 0.6 : 0;
-    p.parts.legL.rotation.x = sw; p.parts.legR.rotation.x = -sw;
-    p.parts.armL.rotation.x = -sw * 0.8; p.parts.armR.rotation.x = sw * 0.8;
-    p.group.position.copy(p.pos);
-    p.group.rotation.y = p.yaw;
-    // enter car
-    if (input.wasPressed('KeyF')) {
-      const car = nearestCar(4.5);
-      if (car) enterCar(car);
-    }
-    // clamp to world
-    p.pos.x = clamp(p.pos.x, -190, 400); p.pos.z = clamp(p.pos.z, -190, 260);
-  } else {
-    // driving handled in vehicles.js (player car)
-    if (input.wasPressed('KeyF')) exitCar();
+  // F: enter the nearest car, or step out of the one we're driving
+  if (input.wasPressed('KeyF')) {
+    if (p.onFoot) tryEnterCar();
+    else exitCar();
   }
+  if (!p.onFoot) return;
+
+  const ax = input.axis();
+  // W moves away from the camera, D moves right on screen
+  const lx = -Math.sin(G.camYaw), lz = -Math.cos(G.camYaw); // camera look direction
+  const rx = Math.cos(G.camYaw), rz = -Math.sin(G.camYaw);  // screen-right
+  let mx = lx * ax.f + rx * ax.s;
+  let mz = lz * ax.f + rz * ax.s;
+  const len = Math.hypot(mx, mz);
+  const sprint = input.keys.ShiftLeft || input.keys.ShiftRight;
+  const target = len > 0 ? (sprint ? 8 : 4.5) : 0;
+  if (len > 0) {
+    mx /= len; mz /= len;
+    p.yaw = turnToward(p.yaw, Math.atan2(mx, mz), dt * 10);
+  }
+  p.speed = lerp(p.speed, target, Math.min(1, dt * 8));
+  p.pos.x += mx * p.speed * dt;
+  p.pos.z += mz * p.speed * dt;
+  // jump (Space) with simple gravity
+  if (input.wasPressed('Space') && p.pos.y <= 0.01) p.vy = 8;
+  if (p.pos.y > 0 || p.vy !== 0) {
+    p.vy -= 22 * dt;
+    p.pos.y = Math.max(0, p.pos.y + p.vy * dt);
+    if (p.pos.y === 0) p.vy = 0;
+  }
+  p.pos.x = clamp(p.pos.x, -190, 395);
+  p.pos.z = clamp(p.pos.z, -190, 255);
+  // walk cycle: legs and arms swing opposite, body bobs slightly
+  p.walkPhase += p.speed * dt * 1.9;
+  const sw = Math.sin(p.walkPhase) * 0.55 * Math.min(1, p.speed / 4.5);
+  p.parts.legL.rotation.x = sw;
+  p.parts.legR.rotation.x = -sw;
+  p.parts.armL.rotation.x = -sw * 0.8;
+  p.parts.armR.rotation.x = sw * 0.8;
+  p.group.position.set(p.pos.x, p.pos.y + Math.abs(Math.sin(p.walkPhase)) * 0.05, p.pos.z);
+  p.group.rotation.y = p.yaw;
 }
 
 export function updateCamera(dt) {
   const p = G.player;
   if (!p) return;
-  // orbit with mouse
-  G.camYaw -= input.mouseDX * 0.0032;
-  G.camPitch = clamp(G.camPitch + input.mouseDY * 0.0022, 0.05, 1.1);
-  if (input.wheelDelta) G.camDist = clamp(G.camDist + input.wheelDelta * 0.01, 5, 16);
-  if (input.wasPressed('KeyC')) { G.camMode = (G.camMode + 1) % 3; }
-  const dist = [9, 6, 14][G.camMode];
-  const height = [3.2, 2.0, 6][G.camMode];
-  const target = p.onFoot ? p.pos.clone().add(new THREE.Vector3(0, 2, 0))
-    : p.car.group.position.clone().add(new THREE.Vector3(0, 1.5, 0));
-  // aim mode pulls the camera close over the shoulder
-  const d = G.aimMode ? 4.5 : dist;
-  const h = G.aimMode ? 2.2 : height;
-  const cx = target.x + Math.sin(G.camYaw) * d * Math.cos(G.camPitch);
-  const cz = target.z + Math.cos(G.camYaw) * d * Math.cos(G.camPitch);
-  const cy = target.y + h + Math.sin(G.camPitch) * d * 0.4;
-  const cam = G.camera;
-  if (!G.camSnapped) { cam.position.set(cx, cy, cz); G.camSnapped = true; }
-  cam.position.set(lerp(cam.position.x, cx, 1 - Math.pow(0.001, dt)), lerp(cam.position.y, cy, 1 - Math.pow(0.001, dt)), lerp(cam.position.z, cz, 1 - Math.pow(0.001, dt)));
-  cam.lookAt(target.x, target.y + (G.aimMode ? 0.4 : 0), target.z);
+  // mouse orbit + wheel zoom + C cycles the camera mode
+  if (input.mouseDX) G.camYaw -= input.mouseDX * 0.004;
+  if (input.mouseDY) G.camPitch = clamp(G.camPitch + input.mouseDY * 0.003, 0.12, 1.1);
+  if (input.wheelDelta) G.camDist = clamp(G.camDist - input.wheelDelta * 0.01, 6, 20);
+  if (input.wasPressed('KeyC')) G.camMode = (G.camMode + 1) % 3;
+
+  const target = p.onFoot ? p.pos : (p.car ? p.car.group.position : p.pos);
+  // while driving, the camera swings in behind the car (unless the mouse is steering it)
+  if (!p.onFoot && p.car && !input.mouseDX) {
+    G.camYaw = turnToward(G.camYaw, p.car.yaw + Math.PI, dt * 1.6);
+  }
+  const modeDist = G.camMode === 0 ? G.camDist : G.camMode === 1 ? Math.max(G.camDist, 13) : 13;
+  const modePitch = G.camMode === 2 ? Math.max(G.camPitch, 0.55) : G.camPitch;
+  const d = modeDist * Math.cos(modePitch);
+  const h = 2 + modeDist * Math.sin(modePitch);
+  const cx = target.x + Math.sin(G.camYaw) * d;
+  const cz = target.z + Math.cos(G.camYaw) * d;
+  if (!G.camSnapped) {
+    G.camera.position.set(cx, h, cz);
+    G.camSnapped = true;
+  } else {
+    G.camera.position.x = lerp(G.camera.position.x, cx, Math.min(1, dt * 7));
+    G.camera.position.y = lerp(G.camera.position.y, h, Math.min(1, dt * 7));
+    G.camera.position.z = lerp(G.camera.position.z, cz, Math.min(1, dt * 7));
+  }
+  G.camera.lookAt(target.x, target.y + 2, target.z);
 }
