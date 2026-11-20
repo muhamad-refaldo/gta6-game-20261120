@@ -1,54 +1,59 @@
-// Solara City 3D — keyboard + mouse input (WASD, orbit camera, aim, wheel).
-import { G } from './state.js';
-
+// Solara City 3D v3.4 — input: keyboard + mouse, F5 quick-save support.
+// Fresh rewrite for v3.4. Exports: input { attach, wasPressed, keys, rightDown,
+// mouseDX, mouseDY, wheelDelta, mouseDown, axis, endFrame }.
+// F5 is intercepted (preventDefault on keydown) so quick-save never reloads
+// the page; Tab and Space are also prevented (focus / scroll).
 export const input = {
   keys: {},
-  mouseDX: 0, mouseDY: 0,
-  mouseDown: false, rightDown: false,
-  dragging: false,
-  locked: false,
-  pressed: new Set(), // keys pressed this frame (edge-triggered)
-  attach(canvas) {
-    const k = (e) => e.code;
+  pressed: new Set(),
+  mouseDX: 0,
+  mouseDY: 0,
+  wheelDelta: 0,
+  mouseDown: false,
+  rightDown: false,
+
+  attach(el) {
     window.addEventListener('keydown', (e) => {
-      if (e.repeat) return;
-      input.keys[k(e)] = true; input.pressed.add(k(e));
-      if (['Space', 'Tab', 'KeyM', 'KeyE', 'KeyF', 'KeyQ'].includes(k(e))) e.preventDefault();
+      if (e.code === 'F5' || e.code === 'Tab' || e.code === 'Space') e.preventDefault();
+      this.keys[e.code] = true;
+      if (!e.repeat) this.pressed.add(e.code);
     });
-    window.addEventListener('keyup', (e) => { input.keys[k(e)] = false; });
-    window.addEventListener('blur', () => { input.keys = {}; });
-    canvas.addEventListener('mousedown', (e) => {
-      if (e.button === 0) { input.mouseDown = true; input.dragging = true; }
-      if (e.button === 2) input.rightDown = true;
-    });
+    window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
+    window.addEventListener('blur', () => { this.keys = {}; this.mouseDown = false; this.rightDown = false; });
+    if (el) {
+      el.addEventListener('mousedown', (e) => {
+        if (e.button === 2) this.rightDown = true;
+        else if (e.button === 0) this.mouseDown = true;
+      });
+      el.addEventListener('mousemove', (e) => {
+        this.mouseDX += e.movementX || 0;
+        this.mouseDY += e.movementY || 0;
+      });
+      el.addEventListener('wheel', (e) => { this.wheelDelta += e.deltaY; }, { passive: true });
+      el.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
     window.addEventListener('mouseup', (e) => {
-      if (e.button === 0) { input.mouseDown = false; input.dragging = false; }
-      if (e.button === 2) input.rightDown = false;
+      if (e.button === 2) this.rightDown = false;
+      else if (e.button === 0) this.mouseDown = false;
     });
-    window.addEventListener('mousemove', (e) => {
-      if (input.locked) { input.mouseDX += e.movementX; input.mouseDY += e.movementY; }
-      else if (input.dragging) { input.mouseDX += e.movementX; input.mouseDY += e.movementY; }
-    });
-    canvas.addEventListener('click', () => {
-      if (!G.title && !G.paused && !G.mapOpen && !input.locked && canvas.requestPointerLock) {
-        try { canvas.requestPointerLock(); } catch (e) {}
-      }
-    });
-    document.addEventListener('pointerlockchange', () => {
-      input.locked = document.pointerLockElement === canvas;
-    });
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-    window.addEventListener('wheel', (e) => { input.wheelDelta = (input.wheelDelta || 0) + e.deltaY; }, { passive: true });
   },
+
+  wasPressed(code) {
+    return this.pressed.has(code);
+  },
+
+  // movement axis: f = forward (+1) / back (-1), s = strafe right (+1) / left (-1)
   axis() {
-    const f = (this.keys.KeyW || this.keys.ArrowUp ? 1 : 0) - (this.keys.KeyS || this.keys.ArrowDown ? 1 : 0);
-    const s = (this.keys.KeyD || this.keys.ArrowRight ? 1 : 0) - (this.keys.KeyA || this.keys.ArrowLeft ? 1 : 0);
+    const k = this.keys;
+    const f = ((k.KeyW || k.ArrowUp) ? 1 : 0) - ((k.KeyS || k.ArrowDown) ? 1 : 0);
+    const s = ((k.KeyD || k.ArrowRight) ? 1 : 0) - ((k.KeyA || k.ArrowLeft) ? 1 : 0);
     return { f, s };
   },
-  wasPressed(code) { return this.pressed.has(code); },
+
   endFrame() {
     this.pressed.clear();
-    this.mouseDX = 0; this.mouseDY = 0;
+    this.mouseDX = 0;
+    this.mouseDY = 0;
     this.wheelDelta = 0;
   },
 };

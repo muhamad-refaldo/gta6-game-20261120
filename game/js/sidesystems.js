@@ -1,24 +1,30 @@
-// Solara City 3D v3.3 — side systems: street races, taxi fares, store robbery,
+// Solara City 3D v3.4 — side systems: street races, taxi fares, store robbery,
 // chop shop, garage respray, gun shop, safehouses, stunt jumps, golden shells,
-// crew, respect toasts and career-stat counters.
-// Fresh rewrite for v3.3. Exports: initSideSystems, updateSideSystems,
+// crew, respect toasts, career-stat counters, courier missions (v3.4) and
+// F5 quick save (v3.4).
+// Fresh rewrite for v3.4. Exports: initSideSystems, updateSideSystems,
 // nearestRaceStart, startRace, startTaxi.
 import * as THREE from 'three';
 import { G, addMoney, addHeat, dist2, clamp, randi, DISTRICTS, districtAt } from './state.js';
 import { toast, setObjective, clearObjective, showHint, hideHint } from './hud.js';
-import { RAMPS, SAFEHOUSES } from './city.js';
+import { RAMPS, SAFEHOUSES, COURIER_DEPOT, COURIER_DROPS } from './city.js';
 import { buyWeapon } from './combat.js';
-import { autosave } from './save.js';
+import { autosave, saveSlot } from './save.js';
 import { audio } from './audio.js';
+import { input } from './input.js';
+import { spawnParkedVehicles } from './vehicles.js';
 
 // ---------- race ----------
 const RACE_REWARD = 8500;
+// 7 rings forming a loop around the start (offsets land on road crossings).
 const RACE_RING_OFFSETS = [
-  [0, -52], [-52, -52], [-52, -104], [0, -104], [52, -104], [52, -52], [52, 0],
+  { x: 0, z: 52 }, { x: 52, z: 52 }, { x: 52, z: 0 }, { x: 52, z: -52 },
+  { x: 0, z: -52 }, { x: -52, z: -52 }, { x: -52, z: 0 },
 ];
+let raceRingMesh = null;
 
 export function nearestRaceStart(maxD) {
-  if (!G.city || !G.player) return null;
+  if (!G.city || !G.city.raceStarts) return null;
   let best = null, bd = maxD;
   for (const rs of G.city.raceStarts) {
     const d = dist2(rs.x, rs.z, G.player.pos.x, G.player.pos.z);
@@ -27,325 +33,449 @@ export function nearestRaceStart(maxD) {
   return best;
 }
 
-function ringPositions(rs, total) {
-  const pts = [];
-  for (let i = 0; i < total && i < RACE_RING_OFFSETS.length; i++) {
-    const [ox, oz] = RACE_RING_OFFSETS[i];
-    pts.push({ x: rs.x + ox, z: rs.z + oz });
-  }
-  return pts;
+function makeRaceRing() {
+  if (raceRingMesh) return raceRingMesh;
+  const m = new THREE.Mesh(
+    new THREE.TorusGeometry(6, 0.45, 10, 28),
+    new THREE.MeshBasicMaterial({ color: 0xffd24a })
+  );
+  m.rotation.x = Math.PI / 2;
+  m.visible = false;
+  G.scene.add(m);
+  raceRingMesh = m;
+  return m;
 }
 
 export function startRace(rs) {
-  if (G.race) { toast('A race is already running — hit the rings!'); return; }
-  if (!G.player.car) { toast('You need a car to race!'); return; }
-  const total = rs.len + 1;
-  const pts = ringPositions(rs, total);
-  const rings = [];
-  for (let i = 0; i < pts.length; i++) {
-    const prev = i === 0 ? { x: rs.x, z: rs.z } : pts[i - 1];
-    const dx = pts[i].x - prev.x, dz = pts[i].z - prev.z;
-    const yaw = Math.atan2(dx, dz);
-    const mesh = new THREE.Mesh(
-      new THREE.TorusGeometry(3.5, 0.35, 10, 24),
-      new THREE.MeshBasicMaterial({ color: 0xffd23d })
-    );
-    mesh.position.set(pts[i].x, 2.5, pts[i].z);
-    mesh.rotation.y = yaw;
-    mesh.castShadow = true;
-    G.scene.add(mesh);
-    rings.push({ x: pts[i].x, z: pts[i].z, hit: false, mesh });
+  if (!rs) return;
+  if (G.race) { toast('Already racing'); return; }
+  if (!G.player.car) { toast('You need a car to race'); return; }
+  const rings = RACE_RING_OFFSETS.map((o) => ({ x: rs.x + o.x, z: rs.z + o.z }));
+  G.race = { name: rs.name, rings, idx: 0 };
+  const ring = makeRaceRing();
+  ring.position.set(rings[0].x, 1.2, rings[0].z);
+  ring.visible = true;
+  setObjective(rs.name, 'Ring 1/' + rings.length + ' — drive through the gold rings');
+  audio.blip(660, 0.15, 'sine', 0.2);
+  toast(rs.name + ' — GO!');
+}
+
+function endRace(win) {
+  if (raceRingMesh) raceRingMesh.visible = false;
+  if (win) {
+    const bonus = G.crew ? 1.25 : 1;
+    const payout = Math.round(RACE_REWARD * bonus);
+    addMoney(payout);
+    G.stats.racesWon++;
+    audio.cash();
+    if (!G.crew) {
+      G.crew = { name: 'Dante', role: 'Driver' };
+      toast('Race won! +$' + payout + ' — Dante joined your crew (+25% race pay)');
+    } else {
+      toast('Race won! +$' + payout);
+    }
+  } else {
+    toast('Race abandoned');
   }
-  G.race = { name: rs.name, rings, hit: 0, total };
-  setObjective('STREET RACE — ' + rs.name, `Hit the rings! (0/${total})`);
-  toast('Race started — hit every ring!');
-  audio.blip(880, 0.15, 'sine', 0.15);
-}
-
-function restoreObjective() {
-  if (G.mission) {
-    const m = G.mission.def, st = m.stages[G.mission.stage];
-    setObjective(m.name + ' — ' + m.contact, st.label);
-  } else clearObjective();
-}
-
-function finishRace() {
-  const r = G.race;
-  if (!r) return;
-  for (const ring of r.rings) G.scene.remove(ring.mesh);
+  clearObjective();
   G.race = null;
-  G.stats.racesWon++;
-  let payout = RACE_REWARD;
-  if (G.crew) payout = Math.round(payout * (1 + G.crew.bonus));
-  addMoney(payout);
-  toast(`RACE WON! +$${payout.toLocaleString()}`);
-  audio.cash();
-  // first race win recruits a crew member (a driver who boosts race payouts)
-  if (!G.crew) {
-    G.crew = { name: 'Dante', role: 'Driver', bonus: 0.25 };
-    toast('Dante joined your crew! (+25% race payout)', 4200);
+}
+
+function updateRace(dt) {
+  if (!G.race) return;
+  if (!G.player.car) { endRace(false); return; }
+  const ring = G.race.rings[G.race.idx];
+  const p = G.player.pos;
+  if (dist2(p.x, p.z, ring.x, ring.z) < 10) {
+    G.race.idx++;
+    audio.blip(880, 0.12, 'sine', 0.2);
+    if (G.race.idx >= G.race.rings.length) { endRace(true); return; }
+    const next = G.race.rings[G.race.idx];
+    if (raceRingMesh) raceRingMesh.position.set(next.x, 1.2, next.z);
+    setObjective(G.race.name, 'Ring ' + (G.race.idx + 1) + '/' + G.race.rings.length + ' — drive through the gold rings');
   }
-  restoreObjective();
 }
 
 // ---------- taxi ----------
 export function startTaxi() {
+  if (!G.player.car) { toast('You need a car for a fare'); return; }
   if (G.taxi.active) return;
-  if (!G.player.car) return;
-  const here = districtAt(G.player.pos.x, G.player.pos.z);
-  const choices = DISTRICTS.filter((d) => d.name !== here.name);
-  const d = choices[Math.floor(Math.random() * choices.length)];
-  const dist = dist2(G.player.pos.x, G.player.pos.z, d.cx, d.cz);
-  const fare = clamp(120 + Math.round(dist * 0.5), 120, 400);
-  G.taxi = { active: true, passenger: null, dest: { x: d.cx, z: d.cz, name: d.name }, fare };
-  setObjective('TAXI', `Drive your passenger to ${d.name} — $${fare}`);
-  toast(`Taxi fare: ${d.name} — $${fare}`);
+  // pick a district far from the player (DISTRICTS use cx/cz, not x/z)
+  let dest = null;
+  for (let tries = 0; tries < 8 && !dest; tries++) {
+    const d = DISTRICTS[randi(0, DISTRICTS.length - 1)];
+    if (dist2(d.cx, d.cz, G.player.pos.x, G.player.pos.z) > 60) dest = d;
+  }
+  if (!dest) dest = DISTRICTS[randi(0, DISTRICTS.length - 1)];
+  const d = dist2(dest.cx, dest.cz, G.player.pos.x, G.player.pos.z);
+  const fare = clamp(Math.round(d * 1.5), 120, 400);
+  G.taxi = { active: true, passenger: 'Rider', dest: { x: dest.cx, z: dest.cz, name: dest.name }, fare };
+  setObjective('Taxi — ' + dest.name, 'Drop off the passenger • $' + fare);
+  toast('Passenger picked up — take them to ' + dest.name);
 }
 
-function finishTaxi() {
-  const t = G.taxi;
-  if (!t.active) return;
-  G.stats.fares++;
-  addMoney(t.fare);
-  toast(`Fare paid! +$${t.fare}`);
+function updateTaxi(dt) {
+  if (!G.taxi.active) return;
+  if (!G.player.car) {
+    G.taxi.active = false;
+    clearObjective();
+    toast('Passenger left — fare cancelled');
+    return;
+  }
+  const p = G.player.pos;
+  const dest = G.taxi.dest;
+  if (dist2(p.x, p.z, dest.x, dest.z) < 16) {
+    addMoney(G.taxi.fare);
+    G.stats.fares++;
+    audio.cash();
+    toast('Fare complete! +$' + G.taxi.fare);
+    G.taxi.active = false;
+    clearObjective();
+  }
+}
+
+// ---------- chop shop + garage ----------
+const SELL_PRICES = { sedan: 900, sports: 1800, suv: 1200, pickup: 1100, van: 800, truck: 1000, taxi: 1000, motorcycle: 1400, boat: 2200 };
+const CAR_COLORS = [0xd43d2a, 0x2a6fd4, 0xe8c832, 0x2e8b6a, 0x8e44ad, 0xe8e8e8, 0x1a1a1a, 0xc97b2a, 0x4ecdc4, 0x7a7a7a];
+
+function updateChopGarage() {
+  const p = G.player;
+  if (!G.city) return;
+  // chop shop: sell the car you are driving
+  if (p.car && dist2(p.pos.x, p.pos.z, G.city.chop.x, G.city.chop.z) < 9) {
+    showHint('Press E — Sell this car');
+    if (window.__ePressed) {
+      const car = p.car;
+      const price = SELL_PRICES[car.type] || 800;
+      addMoney(price);
+      audio.cash();
+      toast('Car sold for $' + price);
+      G.scene.remove(car.group);
+      const ci = G.cars.indexOf(car);
+      if (ci >= 0) G.cars.splice(ci, 1);
+      const ti = G.traffic.indexOf(car);
+      if (ti >= 0) G.traffic.splice(ti, 1);
+      p.car = null;
+      p.onFoot = true;
+      p.group.visible = true;
+      p.group.position.copy(p.pos);
+    }
+    return;
+  }
+  // garage: respray the car you are driving ($100)
+  if (p.car && dist2(p.pos.x, p.pos.z, G.city.garage.x, G.city.garage.z) < 9) {
+    showHint('Press E — Respray ($100)');
+    if (window.__ePressed) {
+      if (G.money < 100) { toast('Not enough cash for a respray'); return; }
+      G.money -= 100;
+      const nc = CAR_COLORS[randi(0, CAR_COLORS.length - 1)];
+      p.car.color = nc;
+      const body = p.car.group.children[0];
+      if (body && body.material && body.material.color) body.material.color.setHex(nc);
+      audio.blip(520, 0.12, 'sine', 0.15);
+      toast('Resprayed — fresh paint!');
+    }
+    return;
+  }
+}
+
+// ---------- store robbery (hold E) ----------
+let robProgress = 0;
+let robCooldownUntil = 0;
+
+function updateStoreRobbery(dt) {
+  const p = G.player;
+  if (!G.city || !G.city.stores) return;
+  if (!p.onFoot) { robProgress = 0; return; }
+  let near = null;
+  for (const s of G.city.stores) {
+    if (dist2(p.pos.x, p.pos.z, s.x, s.z) < 8) { near = s; break; }
+  }
+  if (!near) { robProgress = 0; return; }
+  if (performance.now() < robCooldownUntil) {
+    showHint('This shop was just hit — come back later');
+    return;
+  }
+  if (window.__eHeld) {
+    robProgress += dt;
+    showHint('Robbing ' + near.name + '… ' + Math.round((robProgress / 3) * 100) + '%');
+    if (robProgress >= 3) {
+      robProgress = 0;
+      robCooldownUntil = performance.now() + 60000;
+      G.stats.robberies++;
+      addMoney(800);
+      addHeat(25);
+      audio.cash();
+      toast(' till emptied! +$800 — RUN!');
+      hideHint();
+    }
+  } else {
+    if (robProgress > 0) { robProgress = 0; hideHint(); }
+    else showHint('Hold E — Rob ' + near.name);
+  }
+}
+
+// ---------- golden shells ----------
+function updateShells() {
+  const p = G.player;
+  if (!G.city || !G.city.shells || !p.onFoot) return;
+  for (const sh of G.city.shells) {
+    if (sh.taken) continue;
+    if (dist2(p.pos.x, p.pos.z, sh.x, sh.z) < 2.5) {
+      sh.taken = true;
+      if (sh.mesh) sh.mesh.visible = false;
+      G.shellsTaken++;
+      addMoney(500);
+      audio.cash();
+      toast('Golden shell found! +$500 (' + G.shellsTaken + '/20)');
+      break;
+    }
+  }
+}
+
+// ---------- safehouses ----------
+function updateSafehouses() {
+  const p = G.player;
+  if (!p.onFoot) return;
+  for (let i = 0; i < SAFEHOUSES.length; i++) {
+    const sh = SAFEHOUSES[i];
+    const owned = (G.safehousesOwned || []).includes(i);
+    if (dist2(p.pos.x, p.pos.z, sh.x, sh.z) < 6) {
+      if (owned) {
+        showHint('Press E — Enter ' + sh.name + ' (rest + save)');
+        if (window.__ePressed) {
+          G.health = 100;
+          autosave();
+          audio.blip(660, 0.15, 'sine', 0.15);
+          toast('Home sweet home — healed + saved');
+        }
+      } else {
+        showHint('Press E — Buy ' + sh.name + ' ($' + sh.price.toLocaleString() + ')');
+        if (window.__ePressed) {
+          if (G.money < sh.price) { toast('Not enough cash for ' + sh.name); return; }
+          G.money -= sh.price;
+          if (!Array.isArray(G.safehousesOwned)) G.safehousesOwned = [];
+          G.safehousesOwned.push(i);
+          if (sh.ownedSign) sh.ownedSign.visible = true;
+          autosave();
+          audio.cash();
+          toast(sh.name + ' is yours now!');
+        }
+      }
+      return;
+    }
+  }
+}
+
+// ---------- gun shop ----------
+function updateGunshop() {
+  const p = G.player;
+  if (!G.city || !G.city.gunshop || !p.onFoot) return;
+  const gs = G.city.gunshop;
+  if (dist2(p.pos.x, p.pos.z, gs.x, gs.z) < 8) {
+    const next = G.weapons.findIndex((w) => w.locked);
+    if (next < 0) {
+      showHint('SOLARA ARMS — you own every weapon');
+      return;
+    }
+    const w = G.weapons[next];
+    showHint('Press E — Buy ' + w.name + ' ($' + w.price.toLocaleString() + ')');
+    if (window.__ePressed) {
+      if (buyWeapon(next)) {
+        audio.cash();
+        toast(w.name + ' purchased!');
+      } else {
+        toast('Not enough cash for the ' + w.name);
+      }
+    }
+  }
+}
+
+// ---------- stunt jumps ----------
+function updateStuntJump() {
+  if (!G.stuntJump) return;
+  const sj = G.stuntJump;
+  G.stuntJump = null;
+  if (!Array.isArray(G.jumpsDone)) G.jumpsDone = [];
+  const isNew = !G.jumpsDone.includes(sj.ramp);
+  let bonus;
+  if (isNew) {
+    G.jumpsDone.push(sj.ramp);
+    bonus = 150 + Math.round(sj.airTime * 200);
+    toast('STUNT JUMP! Air ' + sj.airTime.toFixed(1) + 's — +$' + bonus + ' (new ramp)');
+  } else {
+    bonus = 50;
+    toast('Stunt jump +$50');
+  }
+  addMoney(bonus);
   audio.cash();
-  G.taxi = { active: false, passenger: null, dest: null, fare: 0 };
-  restoreObjective();
 }
 
-// ---------- init ----------
-let lastRespect = 0;
-let lastPos = null;
+// ---------- courier missions (v3.4) ----------
+// Pick up a parcel at the depot (on foot, E), deliver it to a drop point
+// (on foot, E) before the timer runs out. Payout scales with distance.
+const COURIER_TIME = 100; // seconds per delivery
+let courierMarker = null;
 
+function makeCourierMarker(x, z) {
+  removeCourierMarker();
+  const g = new THREE.Group();
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.6, 0.6, 30, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.25, side: THREE.DoubleSide })
+  );
+  beam.position.y = 15;
+  g.add(beam);
+  const gem = new THREE.Mesh(
+    new THREE.OctahedronGeometry(1.1),
+    new THREE.MeshBasicMaterial({ color: 0xffd24a })
+  );
+  gem.position.y = 4;
+  g.add(gem);
+  g.position.set(x, 0, z);
+  G.scene.add(g);
+  courierMarker = g;
+  return g;
+}
+
+function removeCourierMarker() {
+  if (courierMarker) {
+    G.scene.remove(courierMarker);
+    courierMarker = null;
+  }
+}
+
+function startCourier() {
+  const c = G.courier;
+  if (c.active) return;
+  // pick a drop point, preferring a different one from the last delivery
+  let drop = null;
+  for (let tries = 0; tries < 6 && !drop; tries++) {
+    const d = COURIER_DROPS[randi(0, COURIER_DROPS.length - 1)];
+    if (d.name !== c.lastDrop) drop = d;
+  }
+  if (!drop) drop = COURIER_DROPS[randi(0, COURIER_DROPS.length - 1)];
+  const d = dist2(drop.x, drop.z, COURIER_DEPOT.x, COURIER_DEPOT.z);
+  const payout = clamp(Math.round(d * 1.2), 150, 350);
+  c.active = true;
+  c.dest = drop;
+  c.payout = payout;
+  c.timeLeft = COURIER_TIME;
+  c.lastShownSec = -1;
+  makeCourierMarker(drop.x, drop.z);
+  setObjective('Courier — ' + drop.name, 'Deliver the parcel • $' + payout + ' • ' + COURIER_TIME + 's left');
+  audio.blip(760, 0.12, 'sine', 0.18);
+  toast('Parcel picked up — deliver to ' + drop.name);
+}
+
+function endCourier(win) {
+  const c = G.courier;
+  if (win) {
+    addMoney(c.payout);
+    if (typeof G.stats.deliveries !== 'number') G.stats.deliveries = 0;
+    G.stats.deliveries++;
+    c.lastDrop = c.dest ? c.dest.name : null;
+    audio.cash();
+    toast('Delivered! +$' + c.payout + ' (' + G.stats.deliveries + ' deliveries)');
+  } else {
+    toast('Delivery failed — too slow. Pick up a new parcel at the depot.');
+  }
+  c.active = false;
+  c.dest = null;
+  c.payout = 0;
+  c.timeLeft = 0;
+  removeCourierMarker();
+  clearObjective();
+}
+
+function updateCourier(dt) {
+  const c = G.courier;
+  if (!c) return;
+  const p = G.player;
+  // near the depot, no active delivery: offer to start one
+  if (!c.active && p.onFoot && dist2(p.pos.x, p.pos.z, COURIER_DEPOT.x, COURIER_DEPOT.z) < 6) {
+    showHint('Press E — Start a courier delivery');
+    if (window.__ePressed) startCourier();
+    return;
+  }
+  if (!c.active) return;
+  // countdown
+  c.timeLeft -= dt;
+  const sec = Math.max(0, Math.ceil(c.timeLeft));
+  if (sec !== c.lastShownSec && c.dest) {
+    c.lastShownSec = sec;
+    setObjective('Courier — ' + c.dest.name, 'Deliver the parcel • $' + c.payout + ' • ' + sec + 's left');
+  }
+  if (c.timeLeft <= 0) { endCourier(false); return; }
+  // at the drop point, on foot: deliver with E
+  if (c.dest && p.onFoot && dist2(p.pos.x, p.pos.z, c.dest.x, c.dest.z) < 6) {
+    showHint('Press E — Deliver the parcel ($' + c.payout + ')');
+    if (window.__ePressed) endCourier(true);
+  }
+}
+
+// ---------- init + per-frame ----------
 export function initSideSystems() {
-  G.race = null;
-  G.taxi = { active: false, passenger: null, dest: null, fare: 0 };
-  if (!G.crew) G.crew = null;
   if (!Array.isArray(G.jumpsDone)) G.jumpsDone = [];
   if (!Array.isArray(G.safehousesOwned)) G.safehousesOwned = [];
   if (typeof G.stats.distance !== 'number') G.stats.distance = 0;
   if (typeof G.stats.maxWanted !== 'number') G.stats.maxWanted = 0;
-  lastRespect = G.respect || 0;
-  lastPos = G.player ? { x: G.player.pos.x, z: G.player.pos.z } : null;
+  if (typeof G.stats.deliveries !== 'number') G.stats.deliveries = 0;
+  if (!G.courier) G.courier = { active: false, dest: null, payout: 0, timeLeft: 0, lastDrop: null, lastShownSec: -1 };
+  // restore owned-safehouse signs after a load
+  for (let i = 0; i < SAFEHOUSES.length; i++) {
+    if ((G.safehousesOwned || []).includes(i) && SAFEHOUSES[i].ownedSign) {
+      SAFEHOUSES[i].ownedSign.visible = true;
+    }
+  }
+  // parked motorcycles + harbour boat (v3.4)
+  spawnParkedVehicles();
 }
-
-// ---------- per-frame ----------
-const SELL_PRICES = { sedan: 900, sports: 1800, suv: 1200, pickup: 1100, van: 800, truck: 1000, taxi: 1000 };
-const RESPRAY_COLORS = [0xd43d2a, 0x2a6fd4, 0xe8c832, 0x2e8b6a, 0x8e44ad, 0xe8e8e8, 0x1a1a1a, 0xc97b2a, 0x4ecdc4, 0x7a7a7a];
 
 export function updateSideSystems(dt) {
   const p = G.player;
-  if (!p || G.title || !G.city) return;
-  const now = performance.now() / 1000;
-
-  // --- career counters: distance travelled + highest wanted ---
-  if (lastPos) {
-    const d = dist2(p.pos.x, p.pos.z, lastPos.x, lastPos.z);
-    if (d < 50) G.stats.distance += d; // ignore teleports
-  }
-  lastPos = { x: p.pos.x, z: p.pos.z };
-  if (G.wanted > (G.stats.maxWanted || 0)) G.stats.maxWanted = G.wanted;
-
-  // --- respect rank toast ---
-  if (G.respect > lastRespect) {
-    toast(`RESPECT RANK ${G.respect} — the streets know your name`, 3600);
-    lastRespect = G.respect;
-  }
-
-  // --- safehouse owned signs follow the save ---
-  for (let i = 0; i < SAFEHOUSES.length; i++) {
-    const sh = SAFEHOUSES[i];
-    if (sh.ownedSign) sh.ownedSign.visible = (G.safehousesOwned || []).includes(i);
-  }
-
-  // --- golden shells ---
-  for (const s of G.city.shells) {
-    if (!s.taken && dist2(p.pos.x, p.pos.z, s.x, s.z) < 3.5) {
-      s.taken = true;
-      if (s.mesh) s.mesh.visible = false;
-      G.shellsTaken++;
-      addMoney(500);
-      toast(`Golden shell found! (${G.shellsTaken}/20) +$500`);
-      audio.cash();
-    }
-  }
-
-  // --- street race: ring detection + ring bob ---
-  if (G.race && p.car) {
-    const carPos = p.car.group.position;
-    for (const ring of G.race.rings) {
-      if (ring.hit) continue;
-      ring.mesh.position.y = 2.5 + Math.sin(now * 2 + ring.x) * 0.3;
-      if (dist2(carPos.x, carPos.z, ring.x, ring.z) < 6) {
-        ring.hit = true;
-        ring.mesh.visible = false;
-        G.race.hit++;
-        audio.blip(1320, 0.12, 'sine', 0.15);
-        setObjective(`STREET RACE — ${G.race.name}`, `Hit the rings! (${G.race.hit}/${G.race.total})`);
-        if (G.race.hit >= G.race.total) finishRace();
-      }
-    }
-  }
-
-  // --- taxi arrival ---
-  // District centres sit on shop block centres, so the car stops a few units
-  // short of the exact point — a 16-unit radius keeps the fare completable.
-  if (G.taxi.active && G.taxi.dest && p.car) {
-    const cp = p.car.group.position;
-    if (dist2(cp.x, cp.z, G.taxi.dest.x, G.taxi.dest.z) < 16) finishTaxi();
-  }
-
-  // --- store robbery (hold E on foot near a shop) ---
-  for (const s of G.city.stores) {
-    if (s.robT < 0) { s.robT += dt; if (s.robT > 0) s.robT = 0; continue; } // cooldown ticks back to 0
-    if (!p.onFoot) continue;
-    if (dist2(p.pos.x, p.pos.z, s.x, s.z) >= 12) { if (s.robT > 0) s.robT = 0; continue; }
-    if (window.__eHeld) {
-      s.robT += dt * 0.35;
-      if (s.robT >= 1) {
-        const payout = 200 + randi(0, 200);
-        addMoney(payout);
-        addHeat(12);
-        G.stats.robberies++;
-        toast(`Robbed ${s.name}! +$${payout}`);
-        audio.cash();
-        s.robT = -30; // 30s cooldown before this shop can be robbed again
-      }
-    } else if (s.robT > 0) {
-      s.robT = 0; // letting go resets the crack
-    }
-  }
-
-  // --- stunt jump bonus (reported by vehicles.js on landing) ---
-  if (G.stuntJump) {
-    const j = G.stuntJump;
-    G.stuntJump = null;
-    const idx = j.ramp;
-    const isNew = idx !== undefined && !(G.jumpsDone || []).includes(idx);
-    if (isNew) G.jumpsDone.push(idx);
-    const bonus = isNew ? 150 + Math.round(j.airTime * 200) : 50;
-    addMoney(bonus);
-    const rampName = idx !== undefined && RAMPS[idx] ? RAMPS[idx].name : 'Stunt';
-    toast(isNew ? `STUNT! New ramp — ${rampName} +$${bonus}` : `STUNT! +$${bonus}`);
-    audio.cash();
-  }
-
-  // --- interactions: nearest hint + E / R presses ---
-  // candidates: {d, hint, onPress, onR}
-  let best = null;
-  const consider = (d, hint, onPress) => {
-    if (!best || d < best.d) best = { d, hint, onPress };
-  };
-  // safehouses (on foot, near the door)
-  for (let i = 0; i < SAFEHOUSES.length; i++) {
-    const sh = SAFEHOUSES[i];
-    if (!p.onFoot) break;
-    const d = dist2(p.pos.x, p.pos.z, sh.x, sh.z);
-    if (d > 6) continue;
-    const owned = (G.safehousesOwned || []).includes(i);
-    if (owned) {
-      consider(d, `Press E to enter ${sh.name} (save + heal)`, () => {
-        autosave();
-        G.health = 100;
-        toast('Safehouse — game saved, health restored');
-        audio.cash();
-      });
-    } else {
-      consider(d, `Press E to buy ${sh.name} — $${sh.price.toLocaleString()}`, () => {
-        if (G.money < sh.price) { toast(`Not enough cash — ${sh.name} costs $${sh.price.toLocaleString()}`); return; }
-        G.money -= sh.price;
-        if (!G.safehousesOwned.includes(i)) G.safehousesOwned.push(i);
-        if (sh.ownedSign) sh.ownedSign.visible = true;
-        toast(`${sh.name} is yours! Safehouse saved.`);
-        audio.cash();
-      });
-    }
-  }
-  // stores (on foot, near the rob point)
+  if (!p || G.title || G.paused || G.gameOver) return;
+  // career counters
+  if (typeof G.stats.distance !== 'number') G.stats.distance = 0;
+  if (typeof G.stats.maxWanted !== 'number') G.stats.maxWanted = 0;
+  if (typeof G.stats.deliveries !== 'number') G.stats.deliveries = 0;
   if (p.onFoot) {
-    for (const s of G.city.stores) {
-      const d = dist2(p.pos.x, p.pos.z, s.x, s.z);
-      if (d > 12) continue;
-      if (s.robT < 0) consider(d, `${s.name} — come back later`, null);
-      else consider(d, `Hold E to rob ${s.name}`, null);
-    }
+    if (p.speed > 0.3) G.stats.distance += p.speed * dt;
+  } else if (p.car) {
+    G.stats.distance += Math.abs(p.car.speed) * dt;
   }
-  // gun shop (on foot)
-  if (p.onFoot && G.city.gunshop) {
-    const gs = G.city.gunshop;
-    const d = dist2(p.pos.x, p.pos.z, gs.x, gs.z);
-    if (d <= 8) {
-      const idx = G.weapons.findIndex((w) => w.locked);
-      if (idx >= 0) {
-        const w = G.weapons[idx];
-        consider(d, `Press E to buy ${w.name} — $${w.price.toLocaleString()}`, () => {
-          if (buyWeapon(idx)) { toast(`${w.name} purchased! — $${w.price.toLocaleString()}`); audio.cash(); }
-          else toast(`Not enough cash — ${w.name} costs $${w.price.toLocaleString()}`);
-        });
-      } else {
-        consider(d, 'All weapons owned', null);
-      }
-    }
-  }
-  // chop shop (in a car)
-  if (!p.onFoot && p.car) {
-    const d = dist2(p.pos.x, p.pos.z, G.city.chop.x, G.city.chop.z);
-    if (d <= 10) {
-      consider(d, 'Press E to sell this car at the Chop Shop', () => {
-        const car = p.car;
-        if (!car) return;
-        const price = SELL_PRICES[car.type] || 800;
-        addMoney(price);
-        const gi = G.cars.indexOf(car);
-        if (gi >= 0) G.cars.splice(gi, 1);
-        G.scene.remove(car.group);
-        p.car = null;
-        p.onFoot = true;
-        p.group.visible = true;
-        p.pos.set(G.city.chop.x + 4, 0, G.city.chop.z + 4);
-        p.group.position.copy(p.pos);
-        toast(`Car sold at the Chop Shop! +$${price.toLocaleString()}`);
-        audio.cash();
-      });
-    }
-  }
-  // garage (in a car) — R to respray
-  if (!p.onFoot && p.car) {
-    const d = dist2(p.pos.x, p.pos.z, G.city.garage.x, G.city.garage.z);
-    if (d <= 10) {
-      if (!best || d < best.d) best = { d, hint: 'Press R to respray & repair ($300)', onPress: null, onR: true };
-    }
-  }
-  // race start (in a car) — E starts the race (handled by main.js)
-  if (!p.onFoot && p.car && !G.race) {
-    const rs = nearestRaceStart(10);
-    if (rs) {
-      const d = dist2(p.pos.x, p.pos.z, rs.x, rs.z);
-      consider(d, `Press E to start ${rs.name}`, null);
-    }
+  if (G.wanted > G.stats.maxWanted) G.stats.maxWanted = G.wanted;
+
+  // F5 quick save (v3.4) — input.js already preventDefaults F5 so the page
+  // never reloads; here we just save to slot 0.
+  if (input.wasPressed('F5')) {
+    saveSlot(0);
+    toast('Quick saved');
   }
 
-  if (best) showHint(best.hint);
-  else hideHint();
+  updateRace(dt);
+  updateTaxi(dt);
+  updateChopGarage();
+  updateStoreRobbery(dt);
+  updateShells();
+  updateSafehouses();
+  updateGunshop();
+  updateStuntJump();
+  updateCourier(dt);
 
-  // consume E / R for the chosen interaction
-  if (best && best.onPress && window.__ePressed) best.onPress();
-  if (best && best.onR && window.__rPressed) {
-    const car = p.car;
-    if (car) {
-      if (G.money < 300) { toast('Not enough cash — respray costs $300'); }
-      else {
-        G.money -= 300;
-        let nc = car.color;
-        while (nc === car.color) nc = RESPRAY_COLORS[Math.floor(Math.random() * RESPRAY_COLORS.length)];
-        car.color = nc;
-        if (car.group.children[0] && car.group.children[0].material) {
-          car.group.children[0].material.color.setHex(nc);
-        }
-        car.health = 100;
-        toast('Resprayed & repaired!');
-        audio.blip(660, 0.12, 'sine', 0.12);
-      }
+  // hide the contextual hint when nothing is near
+  let nearAny = false;
+  if (G.city) {
+    if (p.car) {
+      if (dist2(p.pos.x, p.pos.z, G.city.chop.x, G.city.chop.z) < 9) nearAny = true;
+      if (dist2(p.pos.x, p.pos.z, G.city.garage.x, G.city.garage.z) < 9) nearAny = true;
+    } else {
+      if (G.city.stores) for (const s of G.city.stores) if (dist2(p.pos.x, p.pos.z, s.x, s.z) < 8) nearAny = true;
+      if (G.city.gunshop && dist2(p.pos.x, p.pos.z, G.city.gunshop.x, G.city.gunshop.z) < 8) nearAny = true;
+      for (const sh of SAFEHOUSES) if (dist2(p.pos.x, p.pos.z, sh.x, sh.z) < 6) nearAny = true;
+      if (!G.courier.active && dist2(p.pos.x, p.pos.z, COURIER_DEPOT.x, COURIER_DEPOT.z) < 6) nearAny = true;
+      if (G.courier.active && G.courier.dest && dist2(p.pos.x, p.pos.z, G.courier.dest.x, G.courier.dest.z) < 6) nearAny = true;
     }
   }
+  if (!nearAny) hideHint();
 }
